@@ -35,18 +35,17 @@ If Jzip isn't installed on your system yet, you can install it from source. Down
 sudo apt-get update
 sudo apt-get install jzip
 
-Step 2: Download the Script
+Step 2: Clone the Repository
 
-Clone or download the BBSZGameRunner script into a directory on your server:
+To access the scripts, clone the repository from GitHub. Use the following command to clone the repository to your server:
 
-cd /opt/mystic/doors/zcode/
-git clone https://github.com/your-repo/BBSZGameRunner.git
+git clone https://github.com/jordanjm/BBSZCodeRunner.git
 
 Step 3: Configure BASE_DIR
 
 The script uses the BASE_DIR variable to determine the root directory for game files, save directories, and logs. You will need to update this variable in the script to match your setup.
 
-    Open the script file BBSZGameRunner.sh in a text editor.
+    Open the script file bbszgamerunner.sh in a text editor.
 
     Find the line that defines BASE_DIR (it will look like this):
 
@@ -64,7 +63,8 @@ Step 4: Set Permissions
 
 Ensure the script is executable and that the correct permissions are set for the directories involved:
 
-chmod +x BBSZGameRunner.sh
+chmod +x bbszgamerunner.sh
+chmod +x bbszgameinstall.sh
 
 Step 5: Configure Game Directories and Saves
 
@@ -75,18 +75,108 @@ mkdir -p $BASE_DIR/saves
 chmod 755 $BASE_DIR/games
 chmod 700 $BASE_DIR/saves
 
-Step 6: Add Game Files
+Step 6: Run the Installation Script
+
+To set up the necessary directories and permissions, run the installation script (bbszgameinstall.sh):
+
+    Download or copy the following script as bbszgameinstall.sh into your zcode directory:
+
+#!/bin/bash
+
+# Define the root path
+BASE_DIR="/opt/mystic/doors/zcode-frotz"
+
+# Define directories for games, saves, and logs
+GAMES_DIR="${BASE_DIR}/games"
+SAVES_DIR="${BASE_DIR}/saves"
+LOG_DIR="${BASE_DIR}/log"
+
+# Define the mystic user and group (make sure mystic exists)
+MYSTIC_USER="mystic"
+MYSTIC_GROUP="mystic"
+
+# Function to create directories and set permissions
+create_dirs() {
+    echo "Creating directory structure..."
+
+    # Create the main directories if they don't exist
+    mkdir -p "$GAMES_DIR"
+    mkdir -p "$SAVES_DIR"
+    mkdir -p "$LOG_DIR"
+
+    # Create subdirectories for each game in the saves directory
+    for GAME in $(ls "$GAMES_DIR"); do
+        GAME_NAME="${GAME%.*}"  # Strip the extension from the game file name
+        mkdir -p "$SAVES_DIR/$GAME_NAME"
+    done
+
+    # Set permissions for the directories and files
+    echo "Setting directory permissions..."
+
+    # Set ownership to mystic:mystic for all relevant directories
+    chown -R "$MYSTIC_USER":"$MYSTIC_GROUP" "$BASE_DIR"
+
+    # Set appropriate permissions for the game, saves, and log directories
+    chmod 755 "$GAMES_DIR"        # Games should be readable and executable
+    chmod 700 "$SAVES_DIR"        # Saves should be private
+    chmod 700 "$LOG_DIR"          # Logs should be private
+
+    # Set permissions for each game's save directory
+    for GAME_DIR in "$SAVES_DIR"/*; do
+        if [ -d "$GAME_DIR" ]; then
+            chmod 700 "$GAME_DIR"
+        fi
+    done
+
+    # Set permissions for log files (ensure only mystic can write)
+    chmod 600 "$LOG_DIR"/*.log
+
+    echo "Directory structure and permissions have been set."
+}
+
+# Function to ensure the script is not run as root
+check_if_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "This script should NOT be run as root. Exiting."
+        exit 1
+    fi
+}
+
+# Check if the mystic user exists, if not, exit with error
+check_mystic_user() {
+    if ! id "$MYSTIC_USER" &>/dev/null; then
+        echo "User '$MYSTIC_USER' does not exist. Please create the user first. Exiting."
+        exit 1
+    fi
+}
+
+# Run checks before proceeding
+check_if_root
+check_mystic_user
+
+# Run the directory creation function
+create_dirs
+
+echo "Setup complete!"
+
+    Make it executable:
+
+chmod +x bbszgameinstall.sh
+
+    Run the installation script:
+
+./bbszgameinstall.sh
+
+This will create the necessary directory structure, set proper permissions, and ensure everything is in place for running the ZCode games.
+Step 7: Add Game Files
 
 Add your ZCode game files (e.g., ZORK1.DAT) to the $BASE_DIR/games/ directory. The script will automatically detect these games when it runs.
-Step 7: Configure Mystic BBS (Optional)
-
-If you're using Mystic BBS, ensure that it is properly set up to execute the script when a user starts a game. You can add a door configuration in Mystic BBS to trigger this script.
 Usage
 Running the Script
 
-To start a ZCode game, run the script from the command line with the following syntax:
+To start a ZCode game, run the main script (bbszgamerunner.sh) from the command line with the following syntax:
 
-./BBSZGameRunner.sh <username> <game_file>
+./bbszgamerunner.sh <username> <game_file>
 
     <username>: The player's username (can be an existing Mystic BBS user).
 
@@ -94,45 +184,25 @@ To start a ZCode game, run the script from the command line with the following s
 
 Example:
 
-./BBSZGameRunner.sh jordanjm ZORK1.DAT
+./bbszgamerunner.sh jordanjm ZORK1.DAT
 
 Debug Mode
 
 If you want to enable debug logging to view all actions (including user sanitization and save directory creation), you can add the -debug flag:
 
-./BBSZGameRunner.sh -debug jordanjm ZORK1.DAT
+./bbszgamerunner.sh -debug jordanjm ZORK1.DAT
 
 Special Username Flag
 
 If you want to treat the username as an existing one, even if it doesn't exist in the username file, use the -sun flag:
 
-./BBSZGameRunner.sh jordanjm-sun ZORK1.DAT
+./bbszgamerunner.sh jordanjm-sun ZORK1.DAT
 
 This will treat the username as an existing entry and avoid creating a new sanitized version.
-Configuration
-Sanitizing Usernames
-
-Usernames are sanitized for file system safety and security. The script ensures usernames:
-
-    Are alphanumeric or contain safe characters like underscores (_).
-
-    Do not contain directory traversal characters like ../ or \0.
-
-Save Files
-
-The script automatically creates save directories for each game and each user. Save files are stored in the following directory:
-
-$BASE_DIR/saves/<game_name>/<sanitized_username>/
-
-    The username is sanitized and stored with an incrementing hexadecimal suffix if necessary.
-
-    A checksum is calculated for each save file to ensure data integrity.
-
-Checksum Validation
-
-Each save file is validated with a SHA-256 checksum to ensure it hasn't been tampered with. If the checksum does not match when loading the game, the script will terminate and prompt the user to delete the corrupted save file.
 License
 
 This project is licensed under the GNU General Public License v3.0. See LICENSE for details.
 
 Feel free to modify and use the script as needed. Contributions are welcome!
+
+This README is now linked to your actual GitHub repository (https://github.com/jordanjm/BBSZCodeRunner). Let me know if there's anything else you want to add or modify!
