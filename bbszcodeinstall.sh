@@ -99,4 +99,76 @@ check_mystic_user
 # Run the directory creation function
 create_dirs
 
-echo "Setup complete!"
+# Main game logic
+USER_INPUT="$1"
+GAME_FILE="$2"
+USERNAME="$USER_INPUT"
+
+# Function to sanitize the username (same as before)
+sanitize_username() {
+    local username="$1"
+    sanitized_username=$(echo "$username" | tr -cd 'a-zA-Z0-9_')
+    echo "$sanitized_username"
+}
+
+# Function to handle secret username flag
+SECRET_USERNAME_FLAG="-sun"
+
+# Function to handle secret username flag
+handle_secret_username_flag() {
+    local username="$1"
+    if [[ "$username" == *"$SECRET_USERNAME_FLAG" ]]; then
+        username="${username%-sun}"
+        SANITIZED_USER=$(grep "^$username" "$USER_LOOKUP_FILE" | awk '{print $2}')
+        if [ -z "$SANITIZED_USER" ]; then
+            echo "This username doesn't exist in the lookup file, treating as new."
+            SANITIZED_USER=$(sanitize_username "$username")
+        else
+            echo "Using existing sanitized username: $SANITIZED_USER"
+        fi
+    else
+        SANITIZED_USER=$(sanitize_username "$username")
+    fi
+    echo "$SANITIZED_USER"
+}
+
+# Look-up file location
+USER_LOOKUP_FILE="$BASE_DIR/usernames.txt"
+
+# Lookup sanitized username or create new one
+SANITIZED_USER=$(handle_secret_username_flag "$USERNAME")
+
+# Check if the sanitized username exists in the lookup file, otherwise create a new one
+if [ ! -f "$USER_LOOKUP_FILE" ]; then
+    touch "$USER_LOOKUP_FILE"
+fi
+
+if ! grep -q "^$USERNAME" "$USER_LOOKUP_FILE"; then
+    suffix=$(printf "%X" $(($(wc -l < "$USER_LOOKUP_FILE") + 1))) 
+    echo "$USERNAME $SANITIZED_USER$suffix" >> "$USER_LOOKUP_FILE"
+fi
+
+# Define the save directory based on the sanitized username
+SAVE_DIR="$SAVES_DIR/$SANITIZED_USER"
+SAVE_FILE="$SAVE_DIR/${SANITIZED_USER}.sav"
+
+# DEBUG: Print the save directory and save file path for verification
+echo "DEBUG: Save directory is '$SAVE_DIR'"
+echo "DEBUG: Save file is '$SAVE_FILE'"
+
+# Ensure the save directory exists
+mkdir -p "$SAVE_DIR"
+
+# Check if the save file exists, if not, create it
+if [ ! -f "$SAVE_FILE" ]; then
+    echo "No save file found. Creating a new save file..."
+    touch "$SAVE_FILE"
+else
+    echo "Found existing save file for $SANITIZED_USER."
+fi
+
+# Run the game with the jzip interpreter
+echo "Starting game: $GAME_FILE"
+/usr/games/jzip -l 20 -c 80 -m -s "$SAVE_DIR" "$GAMES_DIR/$GAME_FILE"
+
+echo "Game session for $SANITIZED_USER ended."

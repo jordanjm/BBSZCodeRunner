@@ -81,7 +81,6 @@ handle_secret_username_flag() {
         # Remove the flag part
         username="${username%-sun}"
         # Check if this is an existing user in the lookup file
-        # If so, use their sanitized version from the user file
         SANITIZED_USER=$(grep "^$username" "$USER_LOOKUP_FILE" | awk '{print $2}')
         if [ -z "$SANITIZED_USER" ]; then
             # If the user does not exist, treat this as a new username
@@ -135,8 +134,17 @@ else
     echo "Found existing save file for $SANITIZED_USER." >> "$LOG_DIR/zcode-jzip.log"
 fi
 
-# Run the game with the jzip interpreter
+# Debugging: log the directories and files involved
+echo "GAMES_DIR: $GAMES_DIR" >> "$LOG_DIR/zcode-jzip.log"
+echo "GAME_FILE: $GAME_FILE" >> "$LOG_DIR/zcode-jzip.log"
+echo "SAVE_DIR: $SAVE_DIR" >> "$LOG_DIR/zcode-jzip.log"
+
+# Change to the save directory
+cd "$SAVE_DIR" || { echo "Failed to cd to $SAVE_DIR"; exit 1; }
+
+# Run the game with jzip, using the full path to the game file
 echo "Starting game: $GAME_FILE" >> "$LOG_DIR/zcode-jzip.log"
+echo "Running jzip command: /usr/games/jzip -l 20 -c 80 -m -s $SAVE_DIR $GAMES_DIR/$GAME_FILE" >> "$LOG_DIR/zcode-jzip.log"
 
 /usr/games/jzip -l 20 -c 80 -m -s "$SAVE_DIR" "$GAMES_DIR/$GAME_FILE" 2>> "$LOG_DIR/zcode-jzip.log"
 
