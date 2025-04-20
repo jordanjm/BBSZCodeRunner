@@ -1,6 +1,7 @@
-# BBSZGameRunner
+BBSZGameRunner
 
 BBSZGameRunner is a script designed for running ZCode games on a Mystic BBS system. It handles user management, save files, and game execution, all while ensuring secure and organized operation. The script automates the process of saving/loading games, managing save directories, sanitizing usernames, and verifying data integrity with checksums.
+
 Features
 
     Sanitizes Usernames: Ensures all usernames are safe for use in file systems.
@@ -17,7 +18,7 @@ Features
 
     Supports Multiple Games: Works with all ZCode games in a Mystic BBS environment.
 
-## Prerequisites
+Prerequisites
 
     Linux-based System (preferably a server running a BBS like Mystic BBS)
 
@@ -27,8 +28,7 @@ Features
 
     Optional: A configured Mystic BBS system for user management and game interaction.
 
-## Installation
-
+Installation
 Step 1: Install Jzip
 
 If Jzip isn't installed on your system yet, you can install it from source. Download the latest release from Jzip's official page or use the following commands to install it on a Debian-based system:
@@ -36,11 +36,12 @@ If Jzip isn't installed on your system yet, you can install it from source. Down
 sudo apt-get update
 sudo apt-get install jzip
 
-Step 2: Clone the Repository
+Step 2: Download the Scripts
 
-To access the scripts, clone the repository from GitHub. Use the following command to clone the repository to your server:
+Clone or download the BBSZGameRunner repository into a directory on your server:
 
-git clone https://github.com/jordanjm/BBSZCodeRunner.git
+cd /opt/mystic/doors/zcode/
+git clone https://github.com/your-repo/BBSZGameRunner.git
 
 Step 3: Configure BASE_DIR
 
@@ -78,17 +79,102 @@ chmod 700 $BASE_DIR/saves
 
 Step 6: Run the Installation Script
 
-To set up the necessary directories and permissions, run the installation script (bbszgameinstall.sh)
+To set up the necessary directories and permissions, run the installation script (bbszgameinstall.sh):
 
-./bbszgameinstall.sh  --Script is included in the repository--
+    Download or copy the following script as bbszgameinstall.sh into your zcode directory:
+
+#!/bin/bash
+
+# Define the root path
+BASE_DIR="/opt/mystic/doors/zcode-frotz"
+
+# Define directories for games, saves, and logs
+GAMES_DIR="${BASE_DIR}/games"
+SAVES_DIR="${BASE_DIR}/saves"
+LOG_DIR="${BASE_DIR}/log"
+
+# Define the mystic user and group (make sure mystic exists)
+MYSTIC_USER="mystic"
+MYSTIC_GROUP="mystic"
+
+# Function to create directories and set permissions
+create_dirs() {
+    echo "Creating directory structure..."
+
+    # Create the main directories if they don't exist
+    mkdir -p "$GAMES_DIR"
+    mkdir -p "$SAVES_DIR"
+    mkdir -p "$LOG_DIR"
+
+    # Create subdirectories for each game in the saves directory
+    for GAME in $(ls "$GAMES_DIR"); do
+        GAME_NAME="${GAME%.*}"  # Strip the extension from the game file name
+        mkdir -p "$SAVES_DIR/$GAME_NAME"
+    done
+
+    # Set permissions for the directories and files
+    echo "Setting directory permissions..."
+
+    # Set ownership to mystic:mystic for all relevant directories
+    chown -R "$MYSTIC_USER":"$MYSTIC_GROUP" "$BASE_DIR"
+
+    # Set appropriate permissions for the game, saves, and log directories
+    chmod 755 "$GAMES_DIR"        # Games should be readable and executable
+    chmod 700 "$SAVES_DIR"        # Saves should be private
+    chmod 700 "$LOG_DIR"          # Logs should be private
+
+    # Set permissions for each game's save directory
+    for GAME_DIR in "$SAVES_DIR"/*; do
+        if [ -d "$GAME_DIR" ]; then
+            chmod 700 "$GAME_DIR"
+        fi
+    done
+
+    # Set permissions for log files (ensure only mystic can write)
+    chmod 600 "$LOG_DIR"/*.log
+
+    echo "Directory structure and permissions have been set."
+}
+
+# Function to ensure the script is not run as root
+check_if_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "This script should NOT be run as root. Exiting."
+        exit 1
+    fi
+}
+
+# Check if the mystic user exists, if not, exit with error
+check_mystic_user() {
+    if ! id "$MYSTIC_USER" &>/dev/null; then
+        echo "User '$MYSTIC_USER' does not exist. Please create the user first. Exiting."
+        exit 1
+    fi
+}
+
+# Run checks before proceeding
+check_if_root
+check_mystic_user
+
+# Run the directory creation function
+create_dirs
+
+echo "Setup complete!"
+
+    Make it executable:
+
+chmod +x bbszgameinstall.sh
+
+    Run the installation script:
+
+./bbszgameinstall.sh
 
 This will create the necessary directory structure, set proper permissions, and ensure everything is in place for running the ZCode games.
 Step 7: Add Game Files
 
 Add your ZCode game files (e.g., ZORK1.DAT) to the $BASE_DIR/games/ directory. The script will automatically detect these games when it runs.
 Usage
-
-## Running the Script
+Running the Script
 
 To start a ZCode game, run the main script (bbszgamerunner.sh) from the command line with the following syntax:
 
@@ -116,7 +202,7 @@ If you want to treat the username as an existing one, even if it doesn't exist i
 
 This will treat the username as an existing entry and avoid creating a new sanitized version.
 
-## Calling the Script from Mystic BBS
+Calling the Script from Mystic BBS
 
 To integrate BBSZGameRunner with Mystic BBS, you can set it up to be called from within your BBS as a part of your game's setup. This can be done by adding the script to your BBS's game menu or using Mystic BBS's external programs feature to execute the script.
 Step 1: Create an External Program in Mystic BBS
@@ -155,10 +241,10 @@ The %1 and %2 represent the username and game file, respectively. Mystic will au
 
 This should allow Mystic BBS users to easily run the BBSZGameRunner script directly from the BBS interface. Let me know if you'd like further details or modifications!
 
-## License
+License
 
 This project is licensed under the GNU General Public License v3.0. See LICENSE for details.
 
 Feel free to modify and use the script as needed. Contributions are welcome!
 
-This README is now linked to your actual GitHub repository (https://github.com/jordanjm/BBSZCodeRunner). Let me know if there's anything else you want to add or modify!
+With this setup, users can follow the easy-to-understand instructions for configuring and running the game, while the installation script handles setting up the required directories, permissions, and file structure.
