@@ -1,5 +1,30 @@
 #!/bin/bash
 
+# ----------------------------------------------------------------------------
+# BBSZCodeRunner - A script to run Z-Code games on Mystic BBS with game save support.
+# # BBSZCodeInstall - A script to create the file structure and permissions needed for BBSZCodeRunner.
+#
+# Created by jordanjm (jordanjm@excalibursheath.com)
+# Developed for Mystic BBS at bbs.excalibursheath.com
+#
+# GitHub Repository: https://github.com/jordanjm/BBSZCodeRunner
+#
+# Copyright (C) 2025 jordanjm
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# ----------------------------------------------------------------------------
+
 # Define the root path for the game setup
 BASE_DIR="/opt/mystic/doors/zcode"
 
@@ -95,9 +120,9 @@ if ! grep -q "^$USERNAME" "$USER_LOOKUP_FILE"; then
     echo "$USERNAME $SANITIZED_USER$suffix" >> "$USER_LOOKUP_FILE"
 fi
 
-# Define the save directory based on the sanitized username
-SAVE_DIR="$SAVES_DIR/$GAME_FILE/$SANITIZED_USER"
-SAVE_FILE="$SAVE_DIR/${SANITIZED_USER}.sav"
+# Define the save directory based on the sanitized username and game file
+SAVE_DIR="$SAVES_DIR/$GAME_FILE/$SANITIZED_USER"  # Create subdirectories inside 'saves'
+SAVE_FILE="$SAVE_DIR/${SANITIZED_USER}.sav"      # Save file for the user
 
 # Ensure the save directory exists
 mkdir -p "$SAVE_DIR"
