@@ -72,6 +72,7 @@ Arguments
     <gamefile>: The name of the .z3 or .z5 game file to run.
 
     -b (optional): Enable detailed debug logging. Without this flag, only essential information (start/end times, sanitized username, and game file used) is logged.
+    -d (optional): Changes from frotz to dfrotz when running the gamefile.
 
 Logging
 
