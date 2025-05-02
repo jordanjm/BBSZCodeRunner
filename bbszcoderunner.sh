@@ -18,128 +18,104 @@
 # ========== Configuration ==========
 set -euo pipefail
 
-# --- Configurable paths ---
-FROTZ_CMD="/usr/bin/frotz"
-DFROTZ_CMD="/usr/bin/dfrotz"
-SAVE_BASE_DIR="/opt/mystic/doors/zcode/saves"
-GAME_BASE_DIR="/opt/mystic/doors/zcode/games"
-USERNAME_MAP="/opt/mystic/doors/zcode/usernames.map"
-LOG_FILE="/opt/mystic/doors/zcode/bbszcoderunner.log"
-VERSION="1.0.0"
+# === Base Directory Configuration ===
+BASE_DIR="/opt/mystic/doors/zcode"
+FROTZ_CMD="/usr/games/frotz"
+DFROTZ_CMD="/usr/games/dfrotz"
 
-# --- Usage message ---
-usage() {
-  echo "Usage: $0 [-d] [-b] [-h] [-v] <username> <game_file.z[1-8]>"
-  echo "  -d      Use dfrotz instead of frotz"
-  echo "  -b      Enable debug logging"
-  echo "  -h      Show this help message"
-  echo "  -v      Show script version"
-  exit 1
-}
+SAVE_BASE_DIR="$BASE_DIR/saves"
+GAME_BASE_DIR="$BASE_DIR/games"
+LOG_BASE_DIR="$BASE_DIR/logs"
+USERNAME_MAP="$BASE_DIR/usernames.map"
+LOG_FILE="$LOG_BASE_DIR/zcode-frotz.log"
+VERSION="1.0.2"
 
-# --- Parse flags ---
 USE_DFROTZ=false
 DEBUG=false
 
-while getopts ":dbhv" opt; do
-  case ${opt} in
-    d)
-      USE_DFROTZ=true
-      ;;
-    b)
-      DEBUG=true
-      ;;
-    h)
-      usage
-      ;;
-    v)
-      echo "bbszcoderunner.sh version $VERSION"
-      exit 0
-      ;;
-    *)
-      usage
-      ;;
-  esac
-done
-shift $((OPTIND -1))
+# === Logging helper ===
+log_debug() {
+    if [[ "$DEBUG" == true ]]; then
+        mkdir -p "$(dirname "$LOG_FILE")"
+        echo "$(date '+%F %T') DEBUG: $*" >> "$LOG_FILE"
+    fi
+}
 
-# --- Validate arguments ---
+# === Sanitize username ===
+sanitize_username() {
+    local raw="$1"
+    echo "$raw" | tr -dc '[:alnum:]_-'
+}
+
+# === Parse options ===
+while getopts ":dbhv" opt; do
+    case "$opt" in
+        d) USE_DFROTZ=true ;;
+        b) DEBUG=true ;;
+        h)
+            echo "Usage: $0 [-d] [-b] <username> <game_file>"
+            echo "  -d : Use dfrotz instead of frotz"
+            echo "  -b : Enable debug logging"
+            echo "  -h : Show help"
+            echo "  -v : Show version"
+            exit 0
+            ;;
+        v)
+            echo "$0 version $VERSION"
+            exit 0
+            ;;
+        \?)
+            echo "Unknown option: -$OPTARG" >&2
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+# === Check required args ===
 if [[ $# -ne 2 ]]; then
-  usage
+    echo "Usage: $0 [-d] [-b] <username> <game_file>" >&2
+    exit 1
 fi
 
 username="$1"
 game_file="$2"
 
+# === Validate game file ===
 if [[ ! "$game_file" =~ \.z[1-8]$ ]]; then
-  echo "Error: Game file must end in .z1 through .z8"
-  exit 1
+    echo "Unsupported file type: $game_file" >&2
+    exit 1
 fi
 
-game_file_path="$GAME_BASE_DIR/$game_file"
-if [[ ! -f "$game_file_path" ]]; then
-  echo "Error: Game file not found: $game_file_path"
-  exit 1
+game_path="$GAME_BASE_DIR/$game_file"
+if [[ ! -f "$game_path" ]]; then
+    echo "Game file not found: $game_path" >&2
+    exit 1
 fi
 
-# --- Choose interpreter ---
-frotz_command="$FROTZ_CMD"
-if [ "$USE_DFROTZ" = true ]; then
-  frotz_command="$DFROTZ_CMD"
-fi
+# === Resolve sanitized username ===
+mkdir -p "$(dirname "$USERNAME_MAP")"
+touch "$USERNAME_MAP"
 
-# --- Sanitize username ---
-sanitize_username() {
-  echo "$1" | tr -cd '[:alnum:]_-'
-}
-
-if [[ ! -f "$USERNAME_MAP" ]]; then
-  touch "$USERNAME_MAP"
-fi
-
-sanitized_username=$(grep -F "^${username}:" "$USERNAME_MAP" | cut -d: -f2)
-
-if [[ -z "$sanitized_username" ]]; then
-  sanitized_username=$(sanitize_username "$username")
-  {
-    flock -e 200
-    echo "${username}:${sanitized_username}" >> "$USERNAME_MAP"
-  } 200>"$USERNAME_MAP"
-  $DEBUG && echo "Sanitized username: $sanitized_username" >> "$LOG_FILE"
+sanitized=$(grep -F "^${username}:" "$USERNAME_MAP" | cut -d: -f2 || true)
+if [[ -z "$sanitized" ]]; then
+    sanitized=$(sanitize_username "$username")
+    echo "${username}:${sanitized}" >> "$USERNAME_MAP"
+    log_debug "Added new sanitized username: $sanitized"
 else
-  $DEBUG && echo "Reusing sanitized username: $sanitized_username" >> "$LOG_FILE"
+    log_debug "Reusing sanitized username: $sanitized"
 fi
 
-# --- Setup save directory ---
-game_save_dir="$SAVE_BASE_DIR/$game_file/$sanitized_username"
+# === Setup save directory ===
+game_save_dir="$SAVE_BASE_DIR/$game_file/$sanitized"
 mkdir -p "$game_save_dir"
+log_debug "Save directory: $game_save_dir"
 
-# --- Logging ---
-$DEBUG && {
-  echo "---" >> "$LOG_FILE"
-  echo "Game started: $(date)" >> "$LOG_FILE"
-  echo "User: $username -> $sanitized_username" >> "$LOG_FILE"
-  echo "Game file: $game_file_path" >> "$LOG_FILE"
-}
+# === Select interpreter ===
+frotz_cmd="$FROTZ_CMD"
+[[ "$USE_DFROTZ" == true ]] && frotz_cmd="$DFROTZ_CMD"
+log_debug "Interpreter: $frotz_cmd"
 
-# --- Run the game ---
-cd "$game_save_dir"
-"$frotz_command" -R "$game_save_dir" "$game_file_path"
-
-# --- Cleanup old save files ---
-save_files=("$game_save_dir"/*.qzl "$game_save_dir"/*.sav)
-latest_save="$(ls -t ${save_files[@]} 2>/dev/null | head -n1)"
-
-$DEBUG && {
-  echo "Deleting old save files, keeping only the newest: $latest_save" >> "$LOG_FILE"
-}
-
-for file in "${save_files[@]}"; do
-  if [[ "$file" != "$latest_save" ]]; then
-    rm -f "$file"
-    $DEBUG && echo "Deleted save file: $file" >> "$LOG_FILE"
-  fi
-done
-
-# --- Final log ---
-$DEBUG && echo "Game ended: $(date)" >> "$LOG_FILE"
+# === Run game ===
+log_debug "Running: $frotz_cmd -R \"$game_save_dir\" \"$game_path\""
+exec "$frotz_cmd" -R "$game_save_dir" "$game_path"
