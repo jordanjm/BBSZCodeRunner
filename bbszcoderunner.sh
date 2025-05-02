@@ -1,151 +1,132 @@
 #!/bin/bash
-
-# ----------------------------------------------------------------------------
-# BBSZCodeRunner - A script to run Z-Code games on Mystic BBS with game save support.
-# # BBSZCodeInstall - A script to create the file structure and permissions needed for BBSZCodeRunner.
 #
-# Created by jordanjm (jordanjm@excalibursheath.com)
-# Developed for Mystic BBS at bbs.excalibursheath.com
-#
-# GitHub Repository: https://github.com/jordanjm/BBSZCodeRunner
-#
-# Copyright (C) 2025 jordanjm
-#
+# bbszcoderunner.sh — Secure wrapper for running Frotz/dfrotz in a BBS door environment
+# 
+# Copyright (C) 2025 Your Name
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
+# the Free Software Foundation, either version 3 of the License.
+# 
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
-#
+# 
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-# ----------------------------------------------------------------------------
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-# Define the root path for the game setup
-BASE_DIR="/opt/mystic/doors/zcode"
+# ========== Configuration ==========
+# Paths and variables
+BASEDIR="/opt/mystic/doors/zcode"
+LOG_DIR="$BASEDIR/log"
+LOG_FILE="$LOG_DIR/zcode-frotz.log"
+GAME_DIR="$BASEDIR/games"
+SAVES_DIR="$BASEDIR/saves"
+USERNAME_MAP="$BASEDIR/usernames.map"
+frotz_command="frotz"  # Or dfrotz if using that
 
-# Define directories for games, saves, and logs
-GAMES_DIR="${BASE_DIR}/games"
-SAVES_DIR="${BASE_DIR}/saves"
-LOG_DIR="${BASE_DIR}/log"
+# Ensure log and save directories exist
+mkdir -p "$LOG_DIR" "$SAVES_DIR"
 
-# Define the mystic user and group
-MYSTIC_USER="mystic"
-MYSTIC_GROUP="mystic"
-
-# Secret username flag to identify existing usernames
-SECRET_USERNAME_FLAG="-sun"
-
-# Function to prevent running as root
-check_for_root() {
-    if [ "$(id -u)" -eq 0 ]; then
-        echo "This script cannot be run as root. Exiting."
-        exit 1
-    fi
-}
-
-# Ensure we don't run as root
-check_for_root
-
-# Ensure directories exist
-mkdir -p "$GAMES_DIR"
-mkdir -p "$SAVES_DIR"
-mkdir -p "$LOG_DIR"
-
-# Ensure log files exist in the log directory
-touch "$LOG_DIR/zcode-jzip.log"
-
-# Set file permissions (so the mystic user can access them without root)
-chmod 755 "$GAMES_DIR"           # Games should be readable and executable
-chmod 700 "$SAVES_DIR"           # Saves should be private
-chmod 700 "$LOG_DIR"             # Logs should be private
-
-# Set appropriate log file permissions (ensure only mystic can write)
-chmod 600 "$LOG_DIR"/*.log
-
-# Function to sanitize username (same as before)
+# Sanitize the username (replace invalid characters)
 sanitize_username() {
-    local username="$1"
-    sanitized_username=$(echo "$username" | tr -cd 'a-zA-Z0-9_')
-    echo "$sanitized_username"
+    sanitized=$(echo "$1" | sed 's/[^a-zA-Z0-9_-]/_/g')
+    echo "$sanitized"
 }
 
-# Check if username is a secret one
-handle_secret_username_flag() {
-    local username="$1"
-    if [[ "$username" == *"$SECRET_USERNAME_FLAG" ]]; then
-        # Remove the flag part
-        username="${username%-sun}"
-        # Check if this is an existing user in the lookup file
-        SANITIZED_USER=$(grep "^$username" "$USER_LOOKUP_FILE" | awk '{print $2}')
-        if [ -z "$SANITIZED_USER" ]; then
-            # If the user does not exist, treat this as a new username
-            echo "This username doesn't exist in the lookup file, treating as new." >> "$LOG_DIR/zcode-jzip.log"
-            SANITIZED_USER=$(sanitize_username "$username")
-        else
-            echo "Using existing sanitized username: $SANITIZED_USER" >> "$LOG_DIR/zcode-jzip.log"
+# Input parameters
+username=$1
+game_file=$2
+debug_mode=false  # Default is not in debug mode
+
+# Check for -b flag to turn on debugging
+if [[ "$3" == "-b" ]]; then
+    debug_mode=true
+fi
+
+# Capture script start time and initial message
+if $debug_mode; then
+    echo "Script started at $(date)" >> "$LOG_FILE"
+    echo "Running game with unsanitized username: $username" >> "$LOG_FILE"
+fi
+
+# Check for sanitized username in the map
+sanitized_username=$(grep -F "^${username}:" "$USERNAME_MAP" | cut -d: -f2)
+
+if [[ -z "$sanitized_username" ]]; then
+    # If no sanitized username found, sanitize and add it
+    sanitized_username=$(sanitize_username "$username")
+    if $debug_mode; then
+        echo "Sanitized username: $sanitized_username" >> "$LOG_FILE"
+    fi
+    
+    # Ensure unique sanitized username and add to map if new
+    if ! grep -q "^${username}:" "$USERNAME_MAP"; then
+        echo "${username}:${sanitized_username}" >> "$USERNAME_MAP"
+        if $debug_mode; then
+            echo "Added sanitized username to map: ${username}:${sanitized_username}" >> "$LOG_FILE"
         fi
     else
-        # If it's not a secret, sanitize as usual
-        SANITIZED_USER=$(sanitize_username "$username")
+        if $debug_mode; then
+            echo "Username already exists in map, skipping addition." >> "$LOG_FILE"
+        fi
     fi
-    echo "$SANITIZED_USER"
-}
-
-# Look-up file location
-USER_LOOKUP_FILE="$BASE_DIR/usernames.txt"
-
-# Main game logic
-USER_INPUT="$1"
-GAME_FILE="$2"
-USERNAME="$USER_INPUT"
-
-# Lookup sanitized username or create new one
-SANITIZED_USER=$(handle_secret_username_flag "$USERNAME")
-
-# Check if the sanitized username exists in the lookup file, otherwise create a new one
-if [ ! -f "$USER_LOOKUP_FILE" ]; then
-    touch "$USER_LOOKUP_FILE"
-fi
-
-# Ensure the username and its sanitized version are logged if new
-if ! grep -q "^$USERNAME" "$USER_LOOKUP_FILE"; then
-    # Add to the lookup file, starting with the base sanitized username (suffix in case of duplicates)
-    suffix=$(printf "%X" $(($(wc -l < "$USER_LOOKUP_FILE") + 1))) # Generate hex suffix
-    echo "$USERNAME $SANITIZED_USER$suffix" >> "$USER_LOOKUP_FILE"
-fi
-
-# Define the save directory based on the sanitized username and game file
-SAVE_DIR="$SAVES_DIR/$GAME_FILE/$SANITIZED_USER"  # Create subdirectories inside 'saves'
-SAVE_FILE="$SAVE_DIR/${SANITIZED_USER}.sav"      # Save file for the user
-
-# Ensure the save directory exists
-mkdir -p "$SAVE_DIR"
-
-# Check if the save file exists, if not, create it
-if [ ! -f "$SAVE_FILE" ]; then
-    echo "No save file found. Creating a new save file..." >> "$LOG_DIR/zcode-jzip.log"
-    touch "$SAVE_FILE"
 else
-    echo "Found existing save file for $SANITIZED_USER." >> "$LOG_DIR/zcode-jzip.log"
+    if $debug_mode; then
+        echo "Reusing sanitized username: $sanitized_username" >> "$LOG_FILE"
+    fi
 fi
 
-# Debugging: log the directories and files involved
-echo "GAMES_DIR: $GAMES_DIR" >> "$LOG_DIR/zcode-jzip.log"
-echo "GAME_FILE: $GAME_FILE" >> "$LOG_DIR/zcode-jzip.log"
-echo "SAVE_DIR: $SAVE_DIR" >> "$LOG_DIR/zcode-jzip.log"
+# Prepare the save directory for the game
+game_save_dir="$SAVES_DIR/$(basename "$game_file")/$sanitized_username"
+mkdir -p "$game_save_dir"
 
-# Change to the save directory
-cd "$SAVE_DIR" || { echo "Failed to cd to $SAVE_DIR"; exit 1; }
+# Ensure the game file exists
+game_file_path="$GAME_DIR/$game_file"
+if [[ ! -f "$game_file_path" ]]; then
+    echo "Error: Game file $game_file does not exist!" >> "$LOG_FILE"
+    exit 1
+fi
 
-# Run the game with jzip, using the full path to the game file
-echo "Starting game: $GAME_FILE" >> "$LOG_DIR/zcode-jzip.log"
-echo "Running jzip command: /usr/games/jzip -l 20 -c 80 -m -s $SAVE_DIR $GAMES_DIR/$GAME_FILE" >> "$LOG_DIR/zcode-jzip.log"
+# Log starting game info
+if $debug_mode; then
+    echo "Game file being used: $game_file" >> "$LOG_FILE"
+    echo "Starting game with sanitized username '$sanitized_username'..." >> "$LOG_FILE"
+fi
 
-/usr/games/jzip -l 20 -c 80 -m -s "$SAVE_DIR" "$GAMES_DIR/$GAME_FILE" 2>> "$LOG_DIR/zcode-jzip.log"
+# Start the game, without redirecting standard output (it remains to terminal)
+cd "$game_save_dir" || exit 1
+"$frotz_command" -R "$game_save_dir" "$game_file_path"
 
-echo "Game session for $SANITIZED_USER ended." >> "$LOG_DIR/zcode-jzip.log"
+# Log after the game finishes
+if $debug_mode; then
+    echo "Game finished with sanitized username '$sanitized_username'" >> "$LOG_FILE"
+fi
+
+# Delete old save files except the newest
+save_files=("$game_save_dir"/*.{sav,qzl})
+if [[ ${#save_files[@]} -gt 1 ]]; then
+    latest_save=$(ls -t "$game_save_dir"/*.{sav,qzl} | head -n 1)
+    if $debug_mode; then
+        echo "Deleting old save files, keeping only the newest: $latest_save" >> "$LOG_FILE"
+    fi
+    
+    # Remove all except the latest save
+    for save_file in "${save_files[@]}"; do
+        if [[ "$save_file" != "$latest_save" ]]; then
+            rm -f "$save_file"
+            if $debug_mode; then
+                echo "Deleted save file: $save_file" >> "$LOG_FILE"
+            fi
+        fi
+    done
+else
+    if $debug_mode; then
+        echo "Only one save file found, skipping deletion." >> "$LOG_FILE"
+    fi
+fi
+
+# Capture script end time
+if $debug_mode; then
+    echo "Script ended at $(date)" >> "$LOG_FILE"
+fi
