@@ -1,106 +1,144 @@
 # ----------------------------------------------------------------------------
 # BBSZCodeRunner - Clean, frotz-based Z-Code game runner with save templates
 # ----------------------------------------------------------------------------
-
+    
 # ZCode Runner Script
-
+        
 This is a bash script to run ZCode-based interactive fiction (IF) games with save file management and user sanitization. It supports logging and allows you to specify a sanitized username for each player. Additionally, the script can log game information and manage save files.
 
 ## Features
 
-- **Sanitized Usernames**: Automatically sanitizes user-provided usernames by replacing invalid characters with underscores.
-- **Game File Execution**: Runs ZCode-based games (e.g., `zork1.z3`) using the Frotz interpreter.
-- **Save File Management**: Deletes old save files while preserving the most recent save.
-- **Logging**: Logs various game-related activities, including sanitized usernames, save file deletions, and game start/end times.
-- **Debug Mode**: Option to enable detailed debug logs for troubleshooting.
-
-## Requirements
-
-- **Frotz**: A ZCode interpreter for running interactive fiction games. You can install it on most systems using your package manager.
-- **Bash**: The script is designed for use on Linux-based systems with bash.
-- **Directory Setup**: The script expects a specific directory structure for game files, save files, and username mappings.
-
+- Supports `frotz` and `dfrotz` interpreters
+- Maintains a map of sanitized usernames
+- Automatically creates save directories per user and game
+- Cleans up older save files, keeping only the most recent
+- Logs game runs with optional debug information
+- Clean, user-friendly command-line interface
+    
 ## Installation
 
-1. Clone the repository or download the script to your server.
+1. Clone the repository or download the script to your server:
 
    ```bash
    git clone https://github.com/yourusername/zcode-runner.git
    cd zcode-runner
+   ```
 
-    Ensure that the required directories exist and that Frotz is installed on your system.
+2. Run the setup script to create the necessary directory structure and permissions:
 
-        The script assumes the following directory structure:
+   ```bash
+   sudo ./setup_zcode_env.sh
+   ```
 
-            games/: Contains the .z3 or .z5 game files.
+   This will:
 
-            saves/: Contains save files for the games.
+   - Create the `games/`, `saves/`, and `bbszcoderunner.log` paths under `/opt/mystic/doors/zcode/`
+   - Create a blank `usernames.map` file if it doesn’t exist
+   - Set proper ownership and permissions (edit the script to match your user/group)
 
-            usernames.map: A file that maps unsanitized usernames to sanitized versions.
+3. Make the main runner script executable:
 
-    Modify the script's directory paths if necessary to match your server's structure.
+   ```bash
+   chmod +x bbszcoderunner.sh
+   ```
 
-    Make the script executable:
+4. Ensure `frotz` or `dfrotz` is installed on your system. 
 
-    chmod +x bbszcoderunner.sh
+Install on the following Distributions: Red Hat / Fedora / CentOS / AlmaLinux / Rocky
 
-Usage
-Normal Mode (Minimal Logging)
+```bash
+sudo dnf install frotz
+```
 
-To run the script in normal mode (only basic information logged):
+Install on the following Distributions: Arch Linux / Manjaro
 
-./bbszcoderunner.sh <username> <gamefile>
+```bash
+sudo pacman -S frotz
+```
 
-Example:
+Install on Gentoo
 
-./bbszcoderunner.sh user game.z3
+```bash
+sudo emerge --ask games-engines/frotz
+```
+*Note: dfrotz is often bundled with frotz, but availability may vary depending on your distro.*
 
-Debug Mode (Verbose Logging)
+Install from Source (GitHub)
 
-To run the script in debug mode (with detailed logging):
+If your distribution does not package dfrotz, or you want the latest version:
 
-./bbszcoderunner.sh <username> <gamefile> -b
+```bash
+git clone https://github.com/DavidGriffith/frotz.git
+cd frotz
+make unix
+sudo make install
+```
 
-Example:
+This will build and install the latest version of frotz and dfrotz from source.
 
-./bbszcoderunner.sh user game.z3 -b
+## Usage
 
-Arguments
+```bash
+./bbszcoderunner.sh [-d] [-b] [-h] [-v] <username> <game_file.z[1-8]>
+```
 
-    <username>: The username of the player. If the username contains invalid characters, it will be sanitized.
+### Arguments
 
-    <gamefile>: The name of the .z3 or .z5 game file to run.
+- `<username>`: BBS username or session username
+- `<game_file>`: Name of the Z-code file to run (e.g., `zork1.z3`)
 
-    -b (optional): Enable detailed debug logging. Without this flag, only essential information (start/end times, sanitized username, and game file used) is logged.
-    -d (optional): Changes from frotz to dfrotz when running the gamefile.
+### Options
 
-Logging
+- `-d` – Use `dfrotz` instead of `frotz`
+- `-b` – Enable debug logging (adds detailed logs to the log file)
+- `-h` – Display help message
+- `-v` – Show script version
 
-    The script writes logs to the following file: log/zcode-frotz.log.
+## Configuration
 
-    Log entries include:
+Paths are set via script variables:
 
-        Start and end times for each game run.
+```bash
+FROTZ_CMD="/usr/bin/frotz"
+DFROTZ_CMD="/usr/bin/dfrotz"
+SAVE_BASE_DIR="/opt/mystic/doors/zcode/saves"
+GAME_BASE_DIR="/opt/mystic/doors/zcode/games"
+USERNAME_MAP="/opt/mystic/doors/zcode/usernames.map"
+LOG_FILE="/opt/mystic/doors/zcode/bbszcoderunner.log"
+```
 
-        Sanitized username used.
+Update these paths as needed for your environment.
 
-        Information about save file management (deleting old saves, retaining the most recent save).
+## Logging
 
-        Debug logs when -b is enabled, including detailed information about username map management and any issues encountered.
+If the `-b` flag is set, detailed logs are written to the log file specified in `LOG_FILE`, including:
 
-Notes
+- Game start and end times
+- Username and sanitized name
+- Game file used
+- Save file cleanup details
 
-    The script assumes that the game files and save directories are organized correctly. Adjust paths as needed for your setup.
+Otherwise, only critical errors are shown in terminal output.
 
-    This script is currently designed for ZCode games and Frotz but can be adapted for other interpreters if needed.
+## Example
 
-    The usernames.map file is used to store sanitized usernames, ensuring that players reuse the same sanitized username across sessions.
+```bash
+./bbszcoderunner.sh -d -b alice zork1.z3
+```
 
-License
+Runs `zork1.z3` using `dfrotz` for the user `alice`, with debug logging enabled.
 
-GPL v3. See LICENSE for details.
-Acknowledgments
+## Version
 
-    The ZCode format is developed by Infocom and used for interactive fiction games.
+`bbszcoderunner.sh` version 1.0.0
 
-    Frotz is a popular ZCode interpreter available for various platforms.
+## Notes
+
+- The script assumes that the game files and save directories are organized correctly. Adjust paths as needed for your setup.
+- This script is currently designed for ZCode games and Frotz but can be adapted for other interpreters if needed.
+- The `usernames.map` file is used to store sanitized usernames, ensuring that players reuse the same sanitized username across sessions.
+
+## License
+## License
+
+This project is licensed under the **GNU GPL v3**.

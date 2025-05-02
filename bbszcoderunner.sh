@@ -16,88 +16,130 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 # ========== Configuration ==========
-#!/bin/bash
+set -euo pipefail
 
-# Paths and variables
-BASEDIR="/opt/mystic/doors/zcode"
-LOG_DIR="$BASEDIR/log"
-LOG_FILE="$LOG_DIR/zcode-frotz.log"
-GAME_DIR="$BASEDIR/games"
-SAVES_DIR="$BASEDIR/saves"
-USERNAME_MAP="$BASEDIR/usernames.map"
-frotz_path="/usr/games/frotz"
-dfrotz_path="/usr/games/dfrotz"
+# --- Configurable paths ---
+FROTZ_CMD="/usr/bin/frotz"
+DFROTZ_CMD="/usr/bin/dfrotz"
+SAVE_BASE_DIR="/opt/mystic/doors/zcode/saves"
+GAME_BASE_DIR="/opt/mystic/doors/zcode/games"
+USERNAME_MAP="/opt/mystic/doors/zcode/usernames.map"
+LOG_FILE="/opt/mystic/doors/zcode/bbszcoderunner.log"
+VERSION="1.0.0"
 
-# Defaults
-debug_mode=false
-frotz_command="$frotz_path"
-
-# Sanitize the username (replace invalid characters)
-sanitize_username() {
-    echo "$1" | sed 's/[^a-zA-Z0-9_-]/_/g'
+# --- Usage message ---
+usage() {
+  echo "Usage: $0 [-d] [-b] [-h] [-v] <username> <game_file.z[1-8]>"
+  echo "  -d      Use dfrotz instead of frotz"
+  echo "  -b      Enable debug logging"
+  echo "  -h      Show this help message"
+  echo "  -v      Show script version"
+  exit 1
 }
 
-# Ensure required directories exist
-mkdir -p "$LOG_DIR" "$SAVES_DIR"
+# --- Parse flags ---
+USE_DFROTZ=false
+DEBUG=false
 
-# Parse required args
+while getopts ":dbhv" opt; do
+  case ${opt} in
+    d)
+      USE_DFROTZ=true
+      ;;
+    b)
+      DEBUG=true
+      ;;
+    h)
+      usage
+      ;;
+    v)
+      echo "bbszcoderunner.sh version $VERSION"
+      exit 0
+      ;;
+    *)
+      usage
+      ;;
+  esac
+done
+shift $((OPTIND -1))
+
+# --- Validate arguments ---
+if [[ $# -ne 2 ]]; then
+  usage
+fi
+
 username="$1"
 game_file="$2"
-shift 2
 
-# Parse optional flags
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -b) debug_mode=true ;;
-        -d) frotz_command="$dfrotz_path" ;;
-    esac
-    shift
-done
+if [[ ! "$game_file" =~ \.z[1-8]$ ]]; then
+  echo "Error: Game file must end in .z1 through .z8"
+  exit 1
+fi
 
-# Log start time
-echo "Script started at $(date)" >> "$LOG_FILE"
-echo "Game file being used: $game_file" >> "$LOG_FILE"
-echo "Starting game with sanitized username '$username'" >> "$LOG_FILE"
+game_file_path="$GAME_BASE_DIR/$game_file"
+if [[ ! -f "$game_file_path" ]]; then
+  echo "Error: Game file not found: $game_file_path"
+  exit 1
+fi
 
-# Check username map
+# --- Choose interpreter ---
+frotz_command="$FROTZ_CMD"
+if [ "$USE_DFROTZ" = true ]; then
+  frotz_command="$DFROTZ_CMD"
+fi
+
+# --- Sanitize username ---
+sanitize_username() {
+  echo "$1" | tr -cd '[:alnum:]_-'
+}
+
+if [[ ! -f "$USERNAME_MAP" ]]; then
+  touch "$USERNAME_MAP"
+fi
+
 sanitized_username=$(grep -F "^${username}:" "$USERNAME_MAP" | cut -d: -f2)
 
 if [[ -z "$sanitized_username" ]]; then
-    sanitized_username=$(sanitize_username "$username")
-    if ! grep -q "^${username}:" "$USERNAME_MAP"; then
-        echo "${username}:${sanitized_username}" >> "$USERNAME_MAP"
-        $debug_mode && echo "Added sanitized username to map: ${username}:${sanitized_username}" >> "$LOG_FILE"
-    fi
+  sanitized_username=$(sanitize_username "$username")
+  {
+    flock -e 200
+    echo "${username}:${sanitized_username}" >> "$USERNAME_MAP"
+  } 200>"$USERNAME_MAP"
+  $DEBUG && echo "Sanitized username: $sanitized_username" >> "$LOG_FILE"
 else
-    $debug_mode && echo "Reusing sanitized username: $sanitized_username" >> "$LOG_FILE"
+  $DEBUG && echo "Reusing sanitized username: $sanitized_username" >> "$LOG_FILE"
 fi
 
-# Prepare paths
-game_file_path="$GAME_DIR/$game_file"
-game_save_dir="$SAVES_DIR/$(basename "$game_file")/$sanitized_username"
+# --- Setup save directory ---
+game_save_dir="$SAVE_BASE_DIR/$game_file/$sanitized_username"
 mkdir -p "$game_save_dir"
 
-if [[ ! -f "$game_file_path" ]]; then
-    echo "Error: Game file $game_file_path does not exist!" >> "$LOG_FILE"
-    exit 1
-fi
+# --- Logging ---
+$DEBUG && {
+  echo "---" >> "$LOG_FILE"
+  echo "Game started: $(date)" >> "$LOG_FILE"
+  echo "User: $username -> $sanitized_username" >> "$LOG_FILE"
+  echo "Game file: $game_file_path" >> "$LOG_FILE"
+}
 
-# Run game
-cd "$game_save_dir" || exit 1
+# --- Run the game ---
+cd "$game_save_dir"
 "$frotz_command" -R "$game_save_dir" "$game_file_path"
 
-# After game: cleanup save files
-save_files=("$game_save_dir"/*.{sav,qzl})
-if [[ ${#save_files[@]} -gt 1 ]]; then
-    latest_save=$(ls -t "$game_save_dir"/*.{sav,qzl} 2>/dev/null | head -n 1)
-    $debug_mode && echo "Keeping latest save: $latest_save" >> "$LOG_FILE"
-    for save_file in "${save_files[@]}"; do
-        [[ "$save_file" != "$latest_save" ]] && rm -f "$save_file" && $debug_mode && echo "Deleted: $save_file" >> "$LOG_FILE"
-    done
-else
-    $debug_mode && echo "Only one or no save file found. Skipping deletion." >> "$LOG_FILE"
-fi
+# --- Cleanup old save files ---
+save_files=("$game_save_dir"/*.qzl "$game_save_dir"/*.sav)
+latest_save="$(ls -t ${save_files[@]} 2>/dev/null | head -n1)"
 
-# End log
-echo "Game finished for user '$sanitized_username'" >> "$LOG_FILE"
-echo "Script ended at $(date)" >> "$LOG_FILE"
+$DEBUG && {
+  echo "Deleting old save files, keeping only the newest: $latest_save" >> "$LOG_FILE"
+}
+
+for file in "${save_files[@]}"; do
+  if [[ "$file" != "$latest_save" ]]; then
+    rm -f "$file"
+    $DEBUG && echo "Deleted save file: $file" >> "$LOG_FILE"
+  fi
+done
+
+# --- Final log ---
+$DEBUG && echo "Game ended: $(date)" >> "$LOG_FILE"
